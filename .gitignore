@@ -1,0 +1,21 @@
+# Build output
+out/
+work/
+
+# ISO files
+*.iso
+
+# Temporary files
+*.tmp
+*.log
+
+# Archiso artifacts
+*.img
+*.fs
+
+# Editor
+.vscode/
+.idea/
+
+# System
+.DS_Store
