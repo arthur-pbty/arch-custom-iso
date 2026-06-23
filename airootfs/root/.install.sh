@@ -44,13 +44,13 @@ grid_menu() {
 
             local current_line="${GRID_DATA[$key]}"
             if (( ${#current_line} + ${#add} > max_cols )); then
-                data_page=$(( data_page + 1 ))  # CORRECTION ICI
+                data_page=$(( data_page + 1 ))
                 break
             fi
             GRID_DATA[$key]="${current_line}${add}"
             local len_item_plus2=$(( ${#item} + 2 ))
             max_cols_data=$(( max_cols_data > len_item_plus2 ? max_cols_data : len_item_plus2 ))
-            item_number=$(( item_number + 1 ))  # CORRECTION ICI
+            item_number=$(( item_number + 1 ))
         done
 
         for (( line=0; line<max_rows; line++ )); do
@@ -90,6 +90,17 @@ print_grid_menu() {
 
 ask_confirm() { read -rp "$1 (y/n): " ans; [[ "$ans" =~ ^[yY]$ ]]; }
 
+# Fonction pour échapper les caractères spéciaux JSON (Remplace jq)
+json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}" # Antislash
+    s="${s//\"/\\\"}" # Guillemets
+    s="${s//$'\n'/\\n}" # Retour à la ligne
+    s="${s//$'\r'/\\r}" # Retour chariot
+    s="${s//$'\t'/\\t}" # Tabulation
+    printf '%s' "$s"
+}
+
 # ==========================================
 # SYSTEM LOGIC
 # ==========================================
@@ -120,7 +131,8 @@ install_base_system() {
     pacman -Sy --noconfirm
 
     local disk
-    disk=$(jq -r '.disk_config.device_modifications[] | select(.wipe==true) | .device' user_configuration.json)
+    # On lit le disque directement avec bash au lieu de jq
+    disk=$(grep -o '"device": *"[^"]*"' user_configuration.json | head -1 | cut -d'"' -f4)
     cleanup_install_disk "$disk"
 
     archinstall --config user_configuration.json --creds user_credentials.json --silent --skip-ntp --skip-wkd --skip-wifi-check
@@ -135,8 +147,6 @@ install_base_system() {
 # ==========================================
 
 run_configurator() {
-    command -v jq >/dev/null || pacman -Sy --noconfirm jq
-
     # --- 1. KEYBOARD ---
     KB_LAYOUT=("us" "fr" "de" "uk" "es" "it" "pt-latin1" "br-abnt2" "dvorak" "colemak" "ru" "jp106")
     PAGE=1
@@ -147,6 +157,7 @@ run_configurator() {
 
     while true; do
         clear
+        echo "=== SELECT KEYBOARD LAYOUT ===" # TITRE
         print_grid_menu $(( PAGE - 1 ))
         echo -e "\n[n] Next | [p] Prev | [q] Quit"
         read -rp "Entrée (n/p ou nombre) : " input
@@ -156,9 +167,9 @@ run_configurator() {
             PAGE="$input"
             break
         elif [[ "$input" == "n" ]]; then
-            if (( PAGE < GRID_NUM_PAGES )); then PAGE=$(( PAGE + 1 )); fi  # CORRECTION ICI
+            if (( PAGE < GRID_NUM_PAGES )); then PAGE=$(( PAGE + 1 )); fi
         elif [[ "$input" == "p" ]]; then
-            if (( PAGE > 1 )); then PAGE=$(( PAGE - 1 )); fi  # CORRECTION ICI
+            if (( PAGE > 1 )); then PAGE=$(( PAGE - 1 )); fi
         fi
     done
     keyboard="${KB_LAYOUT[$((PAGE - 1))]}"
@@ -189,6 +200,7 @@ run_configurator() {
 
     while true; do
         clear
+        echo "=== SELECT TIMEZONE ===" # TITRE
         print_grid_menu $(( PAGE - 1 ))
         echo -e "\n[n] Next | [p] Prev | [q] Quit"
         read -rp "Entrée (n/p ou nombre) : " input
@@ -234,6 +246,7 @@ run_configurator() {
 
     while true; do
         clear
+        echo "=== SELECT INSTALLATION DISK ===" # TITRE
         print_grid_menu $(( PAGE - 1 ))
         echo -e "\n[n] Next | [p] Prev | [q] Quit"
         read -rp "Entrée (n/p ou nombre) : " input
@@ -254,16 +267,40 @@ run_configurator() {
     clear; local encrypt_installation="false"
     ask_confirm "Encrypt disk?" && encrypt_installation="true"
 
-    # --- JSON GENERATION ---
-    jq -n \
-        --arg pw "$password" \
-        --arg hash "$password_hash" \
-        --arg user "$username" \
-        '{
-            root_enc_password: $hash,
-            users: [{ enc_password: $hash, groups: [], sudo: true, username: $user }]
-        } + (if $pw != "" then { encryption_password: $pw } else {} end)' > user_credentials.json
+    # --- JSON GENERATION (100% BASH PUR, PLUS DE JQ) ---
+    
+    # On échappe les variables et on les entoure de guillemets
+    local pw_esc="\"$(json_escape "$password")\""
+    local hash_esc="\"$(json_escape "$password_hash")\""
+    local user_esc="\"$(json_escape "$username")\""
+    local host_esc="\"$(json_escape "$hostname")\""
+    local tz_esc="\"$(json_escape "$timezone")\""
+    local kb_esc="\"$(json_escape "$keyboard")\""
+    local disk_esc="\"$(json_escape "$disk")\""
 
+    # Fichier identifiants
+    if [[ $encrypt_installation == "true" ]]; then
+        credentials_encryption_line=" \"encryption_password\": $pw_esc,"
+    else
+        credentials_encryption_line=""
+    fi
+
+    cat <<_EOF_ >user_credentials.json
+{
+ $credentials_encryption_line
+"root_enc_password": $hash_esc,
+"users": [
+{
+"enc_password": $hash_esc,
+"groups": [],
+"sudo": true,
+"username": $user_esc
+}
+]
+}
+_EOF_
+
+    # Calculs partitions
     local disk_size; disk_size=$(lsblk -bdno SIZE "$disk" 2>/dev/null) || true
     local mib=$((1024*1024))
     local gib=$((mib*1024))
@@ -272,58 +309,118 @@ run_configurator() {
     local main_start=$((boot_size + mib))
     local main_size=$((disk_size_in_mib - main_start - mib))
 
-    jq -n \
-        --arg disk "$disk" \
-        --arg hostname "$hostname" \
-        --arg timezone "$timezone" \
-        --arg keyboard "$keyboard" \
-        --argjson boot_size "$boot_size" \
-        --argjson mib "$mib" \
-        --argjson main_size "$main_size" \
-        --argjson main_start "$main_start" \
-        --argjson encrypt "$encrypt_installation" \
-        --arg enc_pw "$password" \
-        '{
-            "archinstall-language": "English",
-            "audio_config": { "audio": "pipewire" },
-            "bootloader": "systemd-boot",
-            "disk_config": {
-                "btrfs_options": { "snapshot_config": { "type": "Snapper" } },
-                "config_type": "default_layout",
-                "device_modifications": [{
-                    "device": $disk,
-                    "partitions": [
-                        { "btrfs": [], "dev_path": null, "flags": ["boot", "esp"], "fs_type": "fat32", "mount_options": [], "mountpoint": "/boot", "obj_id": "ea21d3f2-82bb-49cc-ab5d-6f81ae94e18d", "size": { "sector_size": { "unit": "B", "value": 512 }, "unit": "B", "value": $boot_size }, "start": { "sector_size": { "unit": "B", "value": 512 }, "unit": "B", "value": $mib }, "status": "create", "type": "primary" },
-                        { "btrfs": [ {"mountpoint": "/", "name": "@"}, {"mountpoint": "/home", "name": "@home"}, {"mountpoint": "/var/log", "name": "@log"}, {"mountpoint": "/var/cache/pacman/pkg", "name": "@pkg"} ], "dev_path": null, "flags": [], "fs_type": "btrfs", "mount_options": ["compress=zstd"], "mountpoint": null, "obj_id": "8c2c2b92-1070-455d-b76a-56263bab24aa", "size": { "sector_size": { "unit": "B", "value": 512 }, "unit": "B", "value": $main_size }, "start": { "sector_size": { "unit": "B", "value": 512 }, "unit": "B", "value": $main_start }, "status": "create", "type": "primary" }
-                    ],
-                    "wipe": true
-                }],
-                (if $encrypt == "true" then {
-                    "disk_encryption": {
-                        "encryption_type": "luks", "lvm_volumes": [], "iter_time": 2000,
-                        "partitions": [ "8c2c2b92-1070-455d-b76a-56263bab24aa" ],
-                        "encryption_password": $enc_pw
-                    }
-                } else {} end)
-            },
-            "hostname": $hostname,
-            "kernels": ["linux"],
-            "network_config": { "type": "iso" },
-            "ntp": true,
-            "parallel_downloads": 8,
-            "swap": true,
-            "timezone": $timezone,
-            "locale_config": { "kb_layout": $keyboard, "sys_enc": "UTF-8", "sys_lang": "en_US.UTF-8" },
-            "mirror_config": {
-                "custom_servers": [
-                    {"url": "https://geo.mirror.pkgbuild.com/$repo/os/$arch"},
-                    {"url": "https://mirror.rackspace.com/archlinux/$repo/os/$arch"}
-                ]
-            },
-            "packages": ["base-devel", "git", "snapper"],
-            "profile_config": { "gfx_driver": null, "greeter": null, "profile": {} },
-            "version": "3.0.9"
-        }' > user_configuration.json
+    # Fichier configuration principal
+    if [[ $encrypt_installation == true ]]; then
+        disk_encryption_config=$(cat <<_EOF_
+,
+"disk_encryption": {
+"encryption_type": "luks",
+"lvm_volumes": [],
+"iter_time": 2000,
+"partitions": [ "8c2c2b92-1070-455d-b76a-56263bab24aa" ],
+"encryption_password": $pw_esc
+}
+_EOF_
+)
+    else
+        disk_encryption_config=""
+    fi
+
+    cat <<_EOF_ >user_configuration.json
+{
+"archinstall-language": "English",
+"audio_config": { "audio": "pipewire" },
+"bootloader": "grub",
+"disk_config": {
+"btrfs_options": { "snapshot_config": { "type": "Snapper" } },
+"config_type": "default_layout",
+"device_modifications": [
+{
+"device": $disk_esc,
+"partitions": [
+{
+"btrfs": [],
+"dev_path": null,
+"flags": [ "boot", "esp" ],
+"fs_type": "fat32",
+"mount_options": [],
+"mountpoint": "/boot",
+"obj_id": "ea21d3f2-82bb-49cc-ab5d-6f81ae94e18d",
+"size": {
+"sector_size": { "unit": "B", "value": 512 },
+"unit": "B",
+"value": $boot_size
+},
+"start": {
+"sector_size": { "unit": "B", "value": 512 },
+"unit": "B",
+"value": $mib
+},
+"status": "create",
+"type": "primary"
+},
+{
+"btrfs": [
+{ "mountpoint": "/", "name": "@" },
+{ "mountpoint": "/home", "name": "@home" },
+{ "mountpoint": "/var/log", "name": "@log" },
+{ "mountpoint": "/var/cache/pacman/pkg", "name": "@pkg" }
+],
+"dev_path": null,
+"flags": [],
+"fs_type": "btrfs",
+"mount_options": [ "compress=zstd" ],
+"mountpoint": null,
+"obj_id": "8c2c2b92-1070-455d-b76a-56263bab24aa",
+"size": {
+"sector_size": { "unit": "B", "value": 512 },
+"unit": "B",
+"value": $main_size
+},
+"start": {
+"sector_size": { "unit": "B", "value": 512 },
+"unit": "B",
+"value": $main_start
+},
+"status": "create",
+"type": "primary"
+}
+],
+"wipe": true
+}
+]$disk_encryption_config
+},
+"hostname": $host_esc,
+"kernels": [ "linux" ],
+"network_config": { "type": "iso" },
+"ntp": true,
+"parallel_downloads": 8,
+"swap": true,
+"timezone": $tz_esc,
+"locale_config": {
+"kb_layout": $kb_esc,
+"sys_enc": "UTF-8",
+"sys_lang": "en_US.UTF-8"
+},
+"mirror_config": {
+"custom_servers": [
+{"url": "https://geo.mirror.pkgbuild.com/\$repo/os/\$arch"},
+{"url": "https://mirror.rackspace.com/archlinux/\$repo/os/\$arch"}
+]
+},
+"packages": [
+"base-devel",
+"git",
+"snapper"
+],
+"profile_config": {
+"gfx_driver": null,
+"greeter": null,
+"profile": {}
+},
+"version": "3.0.9"
+}
+_EOF_
 }
 
 # ==========================================
