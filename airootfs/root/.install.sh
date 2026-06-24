@@ -426,7 +426,15 @@ if [[ $(tty) == "/dev/tty1" ]]; then
         "hyprland"
         "xdg-desktop-portal-hyprland" 
         "git"
-        "kitty" # A ENLEVER APRES !
+        "yazi"
+        "dolphin"
+        "rofi"
+        "waybar"
+        "wiremix"
+        "impala"
+        "bluetui"
+        "btop"
+        "cava"
     )
     
     arch-chroot /mnt pacman -S --noconfirm "${EXTRA_PACKAGES[@]}"
@@ -451,6 +459,21 @@ fi
 EOF
     
     chown 1000:1000 "/mnt/home/$username/.bash_profile"
+    
+    # --- 4. COPIE DES DOTFILES ---
+    clear
+    echo "Copying custom .config files..."
+    # On vérifie si le dossier .config existe bien à côté du script sur l'ISO
+    if [[ -d ".config" ]]; then
+        # On le copie dans le home de l'utilisateur sur le disque dur
+        cp -r .config "/mnt/home/$username/"
+        # On s'assure que l'utilisateur est bien le propriétaire (1000:1000 est le 1er user par défaut)
+        chown -R 1000:1000 "/mnt/home/$username/.config"
+        echo "Dotfiles copied successfully!"
+    else
+        echo "No .config folder found next to the script, skipping."
+    fi
+    
     # --- REBOOT AUTOMATIQUE ---
     echo "Installation finished! Rebooting in 3 seconds..."
     sleep 3
