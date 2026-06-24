@@ -50,34 +50,24 @@
     },
     {
       "type": "swap",
-      "key": "└ └󰓡 ",
+      "key": "└ └󰓡",
       "keyColor": "green"
     },
     {
       "type": "custom",
       "format": "\u001b[90m└────────────────────────────────────────────────────┘"
     },
+
     "break",
+
     {
       "type": "custom",
       "format": "\u001b[90m┌──────────────────────Software──────────────────────┐"
     },
     {
       "type": "os",
-      "key": "\ue900 OS",
-      "keyColor": "blue",
-    },
-    {
-      "type": "command",
-      "key": "│ ├󰘬",
-      "keyColor": "blue",
-      "text": "branch=$(omarchy-version-branch); echo \"$branch\""
-    },
-    {
-      "type": "command",
-      "key": "│ ├󰔫",
-      "keyColor": "blue",
-      "text": "channel=$(omarchy-version-channel); echo \"$channel\""
+      "key": "󰣇 OS",
+      "keyColor": "blue"
     },
     {
       "type": "kernel",
@@ -90,8 +80,8 @@
       "keyColor": "blue"
     },
     {
-      "type": "de",
-      "key": " DE",
+      "type": "shell",
+      "key": "│ ├󰆍",
       "keyColor": "blue"
     },
     {
@@ -110,10 +100,9 @@
       "keyColor": "blue"
     },
     {
-      "type": "command",
+      "type": "theme",
       "key": "│ ├󰸌",
-      "keyColor": "blue",
-      "text": "theme=$(omarchy-theme-current); echo -e \"$theme \\e[38m●\\e[37m●\\e[36m●\\e[35m●\\e[34m●\\e[33m●\\e[32m●\\e[31m●\""
+      "keyColor": "blue"
     },
     {
       "type": "terminalfont",
@@ -124,7 +113,9 @@
       "type": "custom",
       "format": "\u001b[90m└────────────────────────────────────────────────────┘"
     },
+
     "break",
+
     {
       "type": "custom",
       "format": "\u001b[90m┌────────────────Age / Uptime / Update───────────────┐"
@@ -142,14 +133,15 @@
     },
     {
       "type": "command",
-      "key": " Update",
+      "key": " Updates",
       "keyColor": "magenta",
-      "text": "updated=$(omarchy-version-pkgs); echo \"$updated\""
+      "text": "checkupdates 2>/dev/null | wc -l"
     },
     {
       "type": "custom",
       "format": "\u001b[90m└────────────────────────────────────────────────────┘"
     },
+
     "break"
   ]
 }

@@ -4,7 +4,7 @@
   "position": "left",
   "spacing": 0,
   "width": 35,
-  "modules-left": ["custom/clock", "custom/weather", "cpu", "memory", "custom/media"],
+  "modules-left": ["custom/clock", "cpu", "memory", "custom/media"],
   "modules-center": ["hyprland/workspaces"],
   "modules-right": ["group/tray-expander", "pulseaudio", "bluetooth", "network", "battery"],
   "hyprland/workspaces": {
@@ -52,15 +52,7 @@
   "custom/clock": {
     "exec": "~/.config/waybar/clock.sh",
     "return-type": "json",
-    "on-click": "omarchy-launch-floating-terminal-with-presentation omarchy-tz-select",
     "tooltip": true
-  },
-  "custom/weather": {
-    "exec": "~/.config/waybar/weather.sh",
-    "return-type": "json",
-    "interval": 60,
-    "tooltip": false,
-    "on-click": "notify-send -u low \"$(omarchy-weather-status)\""
   },
   "custom/media": {
     "exec": "~/.config/waybar/media.sh",
