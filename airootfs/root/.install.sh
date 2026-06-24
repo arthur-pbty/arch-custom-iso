@@ -88,16 +88,14 @@ print_grid_menu() {
     done
 }
 
-ask_confirm() { read -rp "$1 (y/n): " ans; [[ "$ans" =~ ^[yY]$ ]]; }
-
 # Fonction pour échapper les caractères spéciaux JSON (Remplace jq)
 json_escape() {
     local s="$1"
-    s="${s//\\/\\\\}" # Antislash
-    s="${s//\"/\\\"}" # Guillemets
-    s="${s//$'\n'/\\n}" # Retour à la ligne
-    s="${s//$'\r'/\\r}" # Retour chariot
-    s="${s//$'\t'/\\t}" # Tabulation
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
     printf '%s' "$s"
 }
 
@@ -131,7 +129,6 @@ install_base_system() {
     pacman -Sy --noconfirm
 
     local disk
-    # On lit le disque directement avec bash au lieu de jq
     disk=$(grep -o '"device": *"[^"]*"' user_configuration.json | head -1 | cut -d'"' -f4)
     cleanup_install_disk "$disk"
 
@@ -157,7 +154,7 @@ run_configurator() {
 
     while true; do
         clear
-        echo "=== SELECT KEYBOARD LAYOUT ===" # TITRE
+        echo "=== SELECT KEYBOARD LAYOUT ==="
         print_grid_menu $(( PAGE - 1 ))
         echo -e "\n[n] Next | [p] Prev | [q] Quit"
         read -rp "Entrée (n/p ou nombre) : " input
@@ -200,7 +197,7 @@ run_configurator() {
 
     while true; do
         clear
-        echo "=== SELECT TIMEZONE ===" # TITRE
+        echo "=== SELECT TIMEZONE ==="
         print_grid_menu $(( PAGE - 1 ))
         echo -e "\n[n] Next | [p] Prev | [q] Quit"
         read -rp "Entrée (n/p ou nombre) : " input
@@ -246,7 +243,7 @@ run_configurator() {
 
     while true; do
         clear
-        echo "=== SELECT INSTALLATION DISK ===" # TITRE
+        echo "=== SELECT INSTALLATION DISK ==="
         print_grid_menu $(( PAGE - 1 ))
         echo -e "\n[n] Next | [p] Prev | [q] Quit"
         read -rp "Entrée (n/p ou nombre) : " input
@@ -263,13 +260,10 @@ run_configurator() {
     done
     disk=$(echo "${DISKS[$((PAGE - 1))]}" | awk '{print $1}')
 
-    # --- 5. ENCRYPTION ---
-    clear; local encrypt_installation="false"
-    ask_confirm "Encrypt disk?" && encrypt_installation="true"
+    # --- 5. ENCRYPTION (FORCE ACTIVÉ) ---
+    local encrypt_installation="true"
 
-    # --- JSON GENERATION (100% BASH PUR, PLUS DE JQ) ---
-    
-    # On échappe les variables et on les entoure de guillemets
+    # --- JSON GENERATION (100% BASH PUR) ---
     local pw_esc="\"$(json_escape "$password")\""
     local hash_esc="\"$(json_escape "$password_hash")\""
     local user_esc="\"$(json_escape "$username")\""
@@ -278,12 +272,7 @@ run_configurator() {
     local kb_esc="\"$(json_escape "$keyboard")\""
     local disk_esc="\"$(json_escape "$disk")\""
 
-    # Fichier identifiants
-    if [[ $encrypt_installation == "true" ]]; then
-        credentials_encryption_line=" \"encryption_password\": $pw_esc,"
-    else
-        credentials_encryption_line=""
-    fi
+    credentials_encryption_line=" \"encryption_password\": $pw_esc,"
 
     cat <<_EOF_ >user_credentials.json
 {
@@ -300,7 +289,6 @@ run_configurator() {
 }
 _EOF_
 
-    # Calculs partitions
     local disk_size; disk_size=$(lsblk -bdno SIZE "$disk" 2>/dev/null) || true
     local mib=$((1024*1024))
     local gib=$((mib*1024))
@@ -309,9 +297,7 @@ _EOF_
     local main_start=$((boot_size + mib))
     local main_size=$((disk_size_in_mib - main_start - mib))
 
-    # Fichier configuration principal
-    if [[ $encrypt_installation == true ]]; then
-        disk_encryption_config=$(cat <<_EOF_
+    disk_encryption_config=$(cat <<_EOF_
 ,
 "disk_encryption": {
 "encryption_type": "luks",
@@ -322,9 +308,6 @@ _EOF_
 }
 _EOF_
 )
-    else
-        disk_encryption_config=""
-    fi
 
     cat <<_EOF_ >user_configuration.json
 {
@@ -442,31 +425,32 @@ if [[ $(tty) == "/dev/tty1" ]]; then
         "ghostty"
         "hyprland"
         "xdg-desktop-portal-hyprland" 
-        "git" # Assure-toi que git est bien là pour cloner yay
+        "git"
+        "kitty" # A ENLEVER APRES !
     )
     
     arch-chroot /mnt pacman -S --noconfirm "${EXTRA_PACKAGES[@]}"
     
-    # --- 2. CONFIGURATION DE L'AUR (YAY) ---
-    clear
-    echo "Installing YAY (AUR helper) as user $username..."
+    # --- 2. CONFIGURATION TTY AUTO-LOGIN ---
+    echo "Configuring TTY auto-login for $username..."
     
-    # On crée le dossier de cache de compilation pour l'utilisateur
-    mkdir -p /mnt/home/$username/.cache
-    chown -R 1000:1000 /mnt/home/$username/.cache
+    mkdir -p /mnt/etc/systemd/system/getty@tty1.service.d
+    cat > /mnt/etc/systemd/system/getty@tty1.service.d/override.conf << EOF
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin $username --noclear %I \$TERM
+EOF
     
-    # On télécharge et on compile YAY *en tant qu'utilisateur* (très important)
-    arch-chroot /mnt su - "$username" -c 'cd /tmp && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm'
+    # --- 3. LANCEMENT AUTOMATIQUE DE HYPRLAND ---
+    echo "Configuring auto-start Hyprland..."
     
-    # --- 3. INSTALLATION DE BRAVE VIA YAY ---
-    clear
-    echo "Installing Brave via AUR..."
+    cat > "/mnt/home/$username/.bash_profile" << 'EOF'
+if [ -z "${DISPLAY}" ] && [ "$(tty)" = "/dev/tty1" ]; then
+    exec Hyprland
+fi
+EOF
     
-    # On utilise yay en tant qu'utilisateur pour installer brave-bin
-    arch-chroot /mnt su - "$username" -c 'yay -S --noconfirm brave-bin'
-    
-    echo "Custom packages installed successfully!"
-    
+    chown 1000:1000 "/mnt/home/$username/.bash_profile"
     # --- REBOOT AUTOMATIQUE ---
     echo "Installation finished! Rebooting in 3 seconds..."
     sleep 3
