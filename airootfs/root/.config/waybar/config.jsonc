@@ -50,23 +50,23 @@
     "on-click": "btop"
   },
   "custom/clock": {
-    "exec": "home/arthur/.config/waybar/clock.sh",
+    "exec": "~/.config/waybar/clock.sh",
     "return-type": "json",
     "on-click": "omarchy-launch-floating-terminal-with-presentation omarchy-tz-select",
     "tooltip": true
   },
   "custom/weather": {
-    "exec": "home/arthur/.config/waybar/weather.sh",
+    "exec": "~/.config/waybar/weather.sh",
     "return-type": "json",
     "interval": 60,
     "tooltip": false,
     "on-click": "notify-send -u low \"$(omarchy-weather-status)\""
   },
   "custom/media": {
-    "exec": "home/arthur/.config/waybar/media.sh",
+    "exec": "~/.config/waybar/media.sh",
     "return-type": "json",
     "interval": 1,
-    "on-click": "home/arthur/.config/waybar/media_click.sh",
+    "on-click": "~/.config/waybar/media_click.sh",
     "on-click-right": "playerctl -p subtui next",
     "on-click-middle": "playerctl -p subtui previous",
     "tooltip": true
