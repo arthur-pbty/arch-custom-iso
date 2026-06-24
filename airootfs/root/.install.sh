@@ -150,8 +150,8 @@ run_configurator() {
     # --- 1. KEYBOARD ---
     KB_LAYOUT=("us" "fr" "de" "uk" "es" "it" "pt-latin1" "br-abnt2" "dvorak" "colemak" "ru" "jp106")
     PAGE=1
-    COLS=80
-    ROWS=15
+    COLS=$(( $(tput cols) - 10 ))
+    ROWS=$(( $(tput lines) - 10 ))
 
     grid_menu KB_LAYOUT "$PAGE" "$COLS" "$ROWS"
 
@@ -193,8 +193,8 @@ run_configurator() {
     clear; echo "Loading timezones..."
     mapfile -t TIMEZONES < <(timedatectl list-timezones)
     PAGE=1
-    COLS=100
-    ROWS=20
+    COLS=$(( $(tput cols) - 10 ))
+    ROWS=$(( $(tput lines) - 10 ))
 
     grid_menu TIMEZONES "$PAGE" "$COLS" "$ROWS"
 
@@ -239,8 +239,8 @@ run_configurator() {
     done
 
     PAGE=1
-    COLS=100
-    ROWS=10
+    COLS=$(( $(tput cols) - 10 ))
+    ROWS=$(( $(tput lines) - 10 ))
 
     grid_menu DISKS "$PAGE" "$COLS" "$ROWS"
 
@@ -400,7 +400,7 @@ _EOF_
 "locale_config": {
 "kb_layout": $kb_esc,
 "sys_enc": "UTF-8",
-"sys_lang": "en_US.UTF-8"
+"sys_lang": "fr_FR.UTF-8"
 },
 "mirror_config": {
 "custom_servers": [
@@ -432,5 +432,43 @@ if [[ $(tty) == "/dev/tty1" ]]; then
     clear
     echo "Installing base system..."
     install_base_system
-    echo "Base installation complete. You can now reboot or chroot into /mnt."
+    
+    # --- 1. INSTALLATION PACKAGES OFFICIELS ---
+    clear
+    echo "Installing Neovim, Ghostty and Hyprland..."
+    
+    EXTRA_PACKAGES=(
+        "neovim"
+        "ghostty"
+        "hyprland"
+        "xdg-desktop-portal-hyprland" 
+        "git" # Assure-toi que git est bien là pour cloner yay
+    )
+    
+    arch-chroot /mnt pacman -S --noconfirm "${EXTRA_PACKAGES[@]}"
+    
+    # --- 2. CONFIGURATION DE L'AUR (YAY) ---
+    clear
+    echo "Installing YAY (AUR helper) as user $username..."
+    
+    # On crée le dossier de cache de compilation pour l'utilisateur
+    mkdir -p /mnt/home/$username/.cache
+    chown -R 1000:1000 /mnt/home/$username/.cache
+    
+    # On télécharge et on compile YAY *en tant qu'utilisateur* (très important)
+    arch-chroot /mnt su - "$username" -c 'cd /tmp && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm'
+    
+    # --- 3. INSTALLATION DE BRAVE VIA YAY ---
+    clear
+    echo "Installing Brave via AUR..."
+    
+    # On utilise yay en tant qu'utilisateur pour installer brave-bin
+    arch-chroot /mnt su - "$username" -c 'yay -S --noconfirm brave-bin'
+    
+    echo "Custom packages installed successfully!"
+    
+    # --- REBOOT AUTOMATIQUE ---
+    echo "Installation finished! Rebooting in 3 seconds..."
+    sleep 3
+    reboot
 fi
