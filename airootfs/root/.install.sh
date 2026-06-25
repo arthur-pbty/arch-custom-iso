@@ -438,7 +438,6 @@ if [[ $(tty) == "/dev/tty1" ]]; then
         "fastfetch"
         "obsidian"
         "obs-studio"
-        "visual-studio-code-bin"
         "lazygit"
         "docker"
         "docker-buildx"
@@ -447,7 +446,6 @@ if [[ $(tty) == "/dev/tty1" ]]; then
         "mpv"
         "prismlauncher"
         "rust"
-        "localsend"
         "chromium"
         "bat"
         "base-devel"
@@ -474,18 +472,76 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin $username --noclear %I \$TERM
 EOF
     
-    # --- 3. LANCEMENT AUTOMATIQUE DE HYPRLAND ---
-    echo "Configuring auto-start Hyprland..."
-    
-    cat > "/mnt/home/$username/.bash_profile" << 'EOF'
-if [ -z "${DISPLAY}" ] && [ "$(tty)" = "/dev/tty1" ]; then
+# --- 3. LANCEMENT AUTOMATIQUE DE HYPRLAND (sans casser le chroot) ---
+echo "Configuring auto-start Hyprland..."
+
+# On garde .bash_profile mais on ajoute une garde anti-chroot
+cat > "/mnt/home/$username/.bash_profile" << 'EOF'
+# Ne pas démarrer Hyprland si on est dans un chroot archinstall
+if [ -f /.arch-chroot ] || [ -n "$INSTALLING" ]; then
+    return 0 2>/dev/null || exit 0
+fi
+if [ -z "${DISPLAY:-}" ] && [ "$(tty 2>/dev/null)" = "/dev/tty1" ]; then
     exec Hyprland
 fi
 EOF
-    
-    chown 1000:1000 "/mnt/home/$username/.bash_profile"
-    
-    # --- 4. COPIE DES DOTFILES ---
+chown 1000:1000 "/mnt/home/$username/.bash_profile"
+
+# --- 4. PRÉPARATION DU RUNTIME DIR pour paru (Rust) ---
+echo "Preparing XDG_RUNTIME_DIR for user $username..."
+
+USER_UID=$(awk -F: -v u="$username" '$1==u{print $3}' /mnt/etc/passwd)
+USER_GID=$(awk -F: -v u="$username" '$1==u{print $4}' /mnt/etc/passwd)
+
+# Crée le répertoire runtime standard systemd DANS le chroot
+mkdir -p "/mnt/run/user/${USER_UID}"
+chown "${USER_UID}:${USER_GID}" "/mnt/run/user/${USER_UID}"
+chmod 700 "/mnt/run/user/${USER_UID}"
+
+# --- 5. INSTALLATION DE PARU (sans su -, avec sudo -u) ---
+clear
+echo "Installing paru (AUR Helper)..."
+
+# Évite su - (login shell) → utilise sudo -u avec env propre
+arch-chroot /mnt \
+    sudo -u "$username" \
+        XDG_RUNTIME_DIR="/run/user/${USER_UID}" \
+        HOME="/home/$username" \
+        bash -c '
+            set -e
+            cd /tmp
+            rm -rf paru
+            git clone https://aur.archlinux.org/paru.git
+            cd paru
+            makepkg -si --noconfirm --needed
+            cd /tmp
+            rm -rf paru
+        '
+
+echo "paru installed successfully!"
+
+# --- 6. INSTALLATION PACKAGES AUR ---
+clear
+echo "Installing AUR packages..."
+
+AUR_PACKAGES=(
+    visual-studio-code-bin
+    subtui-bin
+    localsend-bin
+)
+
+arch-chroot /mnt \
+    sudo -u "$username" \
+        XDG_RUNTIME_DIR="/run/user/${USER_UID}" \
+        HOME="/home/$username" \
+        bash -c "
+            set -e
+            paru -S --noconfirm --needed ${AUR_PACKAGES[*]}
+        "
+
+echo "AUR packages installed successfully!"
+
+    # --- 6. COPIE DES DOTFILES ---
     clear
     echo "Copying custom .config files..."
     # On vérifie si le dossier .config existe bien à côté du script sur l'ISO
