@@ -39,7 +39,7 @@ Run build script:
 
 ```bash
 chmod +x build.sh
-sudo ./build.sh
+./build.sh
 ```
 
 ---

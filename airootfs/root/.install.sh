@@ -88,7 +88,6 @@ print_grid_menu() {
     done
 }
 
-# Fonction pour échapper les caractères spéciaux JSON (Remplace jq)
 json_escape() {
     local s="$1"
     s="${s//\\/\\\\}"
@@ -260,10 +259,7 @@ run_configurator() {
     done
     disk=$(echo "${DISKS[$((PAGE - 1))]}" | awk '{print $1}')
 
-    # --- 5. ENCRYPTION (FORCE ACTIVÉ) ---
-    local encrypt_installation="true"
-
-    # --- JSON GENERATION (100% BASH PUR) ---
+    # --- 5. JSON GENERATION ---
     local pw_esc="\"$(json_escape "$password")\""
     local hash_esc="\"$(json_escape "$password_hash")\""
     local user_esc="\"$(json_escape "$username")\""
@@ -416,53 +412,60 @@ if [[ $(tty) == "/dev/tty1" ]]; then
     echo "Installing base system..."
     install_base_system
     
+    # --- 0. CONFIGURATION HORS-LIGNE ---
+    ISO_CACHE="/root/offline_cache"
+    # On monte le cache dans un dossier à part pour ne pas saturer la RAM
+    CHROOT_OFFLINE_DIR="/mnt/opt/offline_cache"
+    
+    if [[ -d "$ISO_CACHE" && -n "$(ls -A $ISO_CACHE/*.pkg.tar.zst 2>/dev/null)" ]]; then
+        echo ">>> Mode HORS-LIGNE activé : Utilisation du cache de l'ISO"
+        mkdir -p "$CHROOT_OFFLINE_DIR"
+        mount --bind "$ISO_CACHE" "$CHROOT_OFFLINE_DIR"
+    else
+        echo ">>> Mode EN-LIGNE : Cache de l'ISO non trouvé, téléchargement depuis internet."
+    fi
+
     # --- 1. INSTALLATION PACKAGES OFFICIELS ---
     clear
-    echo "Installing Neovim, Ghostty and Hyprland..."
+    echo "Installing packages (Offline or Online)..."
     
     EXTRA_PACKAGES=(
-        "neovim"
-        "ghostty"
-        "hyprland"
-        "xdg-desktop-portal-hyprland" 
-        "git"
-        "yazi"
-        "dolphin"
-        "rofi"
-        "waybar"
-        "wiremix"
-        "impala"
-        "bluetui"
-        "btop"
-        "cava"
-        "fastfetch"
-        "obsidian"
-        "obs-studio"
-        "lazygit"
-        "docker"
-        "docker-buildx"
-        "docker-compose"
-        "lazydocker"
-        "mpv"
-        "prismlauncher"
-        "rust"
-        "chromium"
-        "bat"
-        "base-devel"
-        "cmake"
-        "nodejs"
-        "npm"
-        "pnpm"
-        "python"
-        "python-pip"
-        "curl"
-        "wget"
-        "unzip"
+        "neovim" "ghostty" "hyprland" "xdg-desktop-portal-hyprland" 
+        "git" "yazi" "dolphin" "rofi" "waybar" "wiremix" "impala" 
+        "bluetui" "btop" "cava" "fastfetch" "obsidian" "obs-studio" 
+        "lazygit" "docker" "docker-buildx" "docker-compose" "lazydocker" 
+        "mpv" "prismlauncher" "rust" "chromium" "bat" "base-devel" 
+        "cmake" "nodejs" "npm" "pnpm" "python" "python-pip" 
+        "curl" "wget" "unzip"
     )
     
-    arch-chroot /mnt pacman -S --noconfirm "${EXTRA_PACKAGES[@]}"
+    # On dit à pacman d'utiliser le disque dur pour écrire, et le dossier /opt/offline_cache pour LIRE les paquets pré-téléchargés
+    if [[ -d "$CHROOT_OFFLINE_DIR" ]]; then
+        arch-chroot /mnt pacman -S --noconfirm --cachedir /var/cache/pacman/pkg --cachedir /opt/offline_cache "${EXTRA_PACKAGES[@]}"
+    else
+        arch-chroot /mnt pacman -S --noconfirm "${EXTRA_PACKAGES[@]}"
+    fi
     
-    # --- 2. CONFIGURATION TTY AUTO-LOGIN ---
+    # --- 2. INSTALLATION PACKAGES AUR (HORS-LIGNE) ---
+    clear
+    echo "Installing pre-compiled AUR packages..."
+    for pkg in visual-studio-code-bin subtui-bin localsend-bin; do
+        # On cherche le nom exact du fichier depuis l'hôte
+        PKG_PATH=$(ls ${CHROOT_OFFLINE_DIR}/${pkg}*.pkg.tar.zst 2>/dev/null | head -n 1)
+        
+        if [[ -n "$PKG_PATH" ]]; then
+            echo ">>> Installation de $pkg"
+            # On enlève "/mnt" du chemin pour que ça corresponde au point de vue du chroot
+            CHROOT_PKG_PATH="${PKG_PATH#/mnt}"
+            
+            # On passe le chemin exact (sans étoile) à pacman
+            arch-chroot /mnt pacman -U --noconfirm "$CHROOT_PKG_PATH"
+        else
+            echo ">>> $pkg non trouvé, ignoré."
+        fi
+    done
+
+    # --- 3. CONFIGURATION TTY AUTO-LOGIN ---
     echo "Configuring TTY auto-login for $username..."
     
     mkdir -p /mnt/etc/systemd/system/getty@tty1.service.d
@@ -472,12 +475,9 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin $username --noclear %I \$TERM
 EOF
     
-# --- 3. LANCEMENT AUTOMATIQUE DE HYPRLAND (sans casser le chroot) ---
-echo "Configuring auto-start Hyprland..."
-
-# On garde .bash_profile mais on ajoute une garde anti-chroot
-cat > "/mnt/home/$username/.bash_profile" << 'EOF'
-# Ne pas démarrer Hyprland si on est dans un chroot archinstall
+    # --- 4. LANCEMENT AUTOMATIQUE DE HYPRLAND ---
+    echo "Configuring auto-start Hyprland..."
+    cat > "/mnt/home/$username/.bash_profile" << 'EOF'
 if [ -f /.arch-chroot ] || [ -n "$INSTALLING" ]; then
     return 0 2>/dev/null || exit 0
 fi
@@ -485,77 +485,27 @@ if [ -z "${DISPLAY:-}" ] && [ "$(tty 2>/dev/null)" = "/dev/tty1" ]; then
     exec Hyprland
 fi
 EOF
-chown 1000:1000 "/mnt/home/$username/.bash_profile"
+    chown 1000:1000 "/mnt/home/$username/.bash_profile"
 
-# --- 4. PRÉPARATION DU RUNTIME DIR pour paru (Rust) ---
-echo "Preparing XDG_RUNTIME_DIR for user $username..."
-
-USER_UID=$(awk -F: -v u="$username" '$1==u{print $3}' /mnt/etc/passwd)
-USER_GID=$(awk -F: -v u="$username" '$1==u{print $4}' /mnt/etc/passwd)
-
-# Crée le répertoire runtime standard systemd DANS le chroot
-mkdir -p "/mnt/run/user/${USER_UID}"
-chown "${USER_UID}:${USER_GID}" "/mnt/run/user/${USER_UID}"
-chmod 700 "/mnt/run/user/${USER_UID}"
-
-# --- 5. INSTALLATION DE PARU (sans su -, avec sudo -u) ---
-clear
-echo "Installing paru (AUR Helper)..."
-
-# Évite su - (login shell) → utilise sudo -u avec env propre
-arch-chroot /mnt \
-    sudo -u "$username" \
-        XDG_RUNTIME_DIR="/run/user/${USER_UID}" \
-        HOME="/home/$username" \
-        bash -c '
-            set -e
-            cd /tmp
-            rm -rf paru
-            git clone https://aur.archlinux.org/paru.git
-            cd paru
-            makepkg -si --noconfirm --needed
-            cd /tmp
-            rm -rf paru
-        '
-
-echo "paru installed successfully!"
-
-# --- 6. INSTALLATION PACKAGES AUR ---
-clear
-echo "Installing AUR packages..."
-
-AUR_PACKAGES=(
-    visual-studio-code-bin
-    subtui-bin
-    localsend-bin
-)
-
-arch-chroot /mnt \
-    sudo -u "$username" \
-        XDG_RUNTIME_DIR="/run/user/${USER_UID}" \
-        HOME="/home/$username" \
-        bash -c "
-            set -e
-            paru -S --noconfirm --needed ${AUR_PACKAGES[*]}
-        "
-
-echo "AUR packages installed successfully!"
-
-    # --- 6. COPIE DES DOTFILES ---
+    # --- 5. COPIE DES DOTFILES & INJECTION CLAVIER ---
     clear
     echo "Copying custom .config files..."
-    # On vérifie si le dossier .config existe bien à côté du script sur l'ISO
     if [[ -d ".config" ]]; then
-        # On le copie dans le home de l'utilisateur sur le disque dur
         cp -r .config "/mnt/home/$username/"
-        # On s'assure que l'utilisateur est bien le propriétaire (1000:1000 est le 1er user par défaut)
+        
+        HYPRLAND_CONF="/mnt/home/$username/.config/hypr/init.lua"
+        if [[ -f "$HYPRLAND_CONF" ]]; then
+            sed -i "s/__KB_LAYOUT__/$keyboard/g" "$HYPRLAND_CONF"
+            echo "Hyprland keyboard set to: $keyboard"
+        fi
+
         chown -R 1000:1000 "/mnt/home/$username/.config"
-        echo "Dotfiles copied successfully!"
+        echo "Dotfiles configured successfully!"
     else
-        echo "No .config folder found next to the script, skipping."
+        echo "No .config folder found, skipping."
     fi
     
-    # --- REBOOT AUTOMATIQUE ---
+    # --- REBOOT ---
     echo "Installation finished! Rebooting in 3 seconds..."
     sleep 3
     reboot

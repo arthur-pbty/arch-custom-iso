@@ -216,7 +216,7 @@ hl.config({
 
 hl.config({
     input = {
-        kb_layout  = "fr",
+        kb_layout  = "__KB_LAYOUT__", -- MARQUEUR REMPLACÉ PAR LE SCRIPT BASH
         kb_variant = "",
         kb_model   = "",
         kb_options = "",
@@ -271,10 +271,13 @@ hl.bind(mainMod .. " + down",  hl.dsp.focus({ direction = "down" }))
 
 -- Switch workspaces with mainMod + [0-9]
 -- Move active window to a workspace with mainMod + SHIFT + [0-9]
+-- CORRECTION : Utilisation des keycodes (code:10 à code:19) pour que ça marche sur AZERTY/QWERTY
 for i = 1, 10 do
-    local key = i % 10 -- 10 maps to key 0
-    hl.bind(mainMod .. " + " .. key,             hl.dsp.focus({ workspace = i}))
-    hl.bind(mainMod .. " + SHIFT + " .. key,     hl.dsp.window.move({ workspace = i }))
+    local keycode = 9 + i -- 10=1, 11=2, 12=3 ... 18=9, 19=0
+    local key_str = "code:" .. keycode
+    
+    hl.bind(mainMod .. " + " .. key_str, hl.dsp.workspace(i))
+    hl.bind(mainMod .. " + SHIFT + " .. key_str, hl.dsp.movetoworkspace(i))
 end
 
 -- Example special workspace (scratchpad)

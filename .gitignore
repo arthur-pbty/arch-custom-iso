@@ -13,6 +13,15 @@ work/
 *.img
 *.fs
 
+# --- AJOUTS POUR LE HORS-LIGNE ---
+# Dossiers temporaires de compilation (créés par build.sh)
+offline_cache/
+aur_build/
+
+# Le cache des paquets générés dans l'arborescence de l'ISO (GROS FICHIERS)
+airootfs/root/offline_cache/
+# ---------------------------------
+
 # Editor
 .vscode/
 .idea/
