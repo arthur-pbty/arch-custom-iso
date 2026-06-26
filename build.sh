@@ -80,7 +80,7 @@ for pkg in "${AUR_PACKAGES[@]}"; do
     cd "$pkg"
     
     # CRUCIAL : On lance makepkg EN TANT QU'UTILISATEUR NORMAL (pas de -s pour éviter de reboucler sur sudo)
-    sudo -u "$BUILD_USER" makepkg -f --noconfirm --needed
+    sudo -u "$BUILD_USER" makepkg -d -f --noconfirm --needed
     
     # On déplace le paquet compilé dans notre cache
     mv *.pkg.tar.zst ../../offline_cache/
