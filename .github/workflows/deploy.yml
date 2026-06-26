@@ -5,7 +5,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-  workflow_dispatch: # Permet de lancer le build manuellement depuis l'onglet Actions
+  workflow_dispatch:
 
 jobs:
   build-iso:
@@ -19,19 +19,16 @@ jobs:
       - name: Install build dependencies
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm archiso git sudo
+          pacman -S --noconfirm archiso git sudo base-devel fakeroot
 
       - name: Create builder user
-        # makepkg refuse de s'exécuter en tant que root, on crée un utilisateur
         run: |
           useradd -m -G wheel -s /bin/bash builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
       - name: Run ISO build script
         run: |
-          # On donne les droits à l'utilisateur builder pour qu'il puisse créer les dossiers
           chown -R builder:builder .
-          # On lance ton script en tant qu'utilisateur builder
           sudo -u builder bash ./build.sh
 
       - name: Verify ISO creation
@@ -49,4 +46,4 @@ jobs:
         with:
           name: arch-custom-iso
           path: out/*.iso
-          retention-days: 7 # Garde l'ISO 7 jours sur GitHub pour pouvoir la télécharger
+          retention-days: 7
