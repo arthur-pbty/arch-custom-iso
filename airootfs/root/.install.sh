@@ -493,10 +493,15 @@ EOF
     if [[ -d ".config" ]]; then
         cp -r .config "/mnt/home/$username/"
         
-        HYPRLAND_CONF="/mnt/home/$username/.config/hypr/init.lua"
-        if [[ -f "$HYPRLAND_CONF" ]]; then
-            sed -i "s/__KB_LAYOUT__/$keyboard/g" "$HYPRLAND_CONF"
-            echo "Hyprland keyboard set to: $keyboard"
+        # On cherche dynamiquement le fichier .lua contenant le marqueur dans tout le dossier hypr
+        HYPRLAND_CONF=$(grep -rl "__KB_LAYOUT__" "/mnt/home/$username/.config/hypr/" 2>/dev/null | head -n 1)
+        
+        if [[ -n "$HYPRLAND_CONF" ]]; then
+            # Utilisation de | comme délimiteur pour sed pour éviter les erreurs de parsing
+            sed -i "s|__KB_LAYOUT__|${keyboard}|g" "$HYPRLAND_CONF"
+            echo "Hyprland keyboard set to: $keyboard in $HYPRLAND_CONF"
+        else
+            echo "ERREUR: Marqueur __KB_LAYOUT__ introuvable dans les configs Hyprland !"
         fi
 
         chown -R 1000:1000 "/mnt/home/$username/.config"
